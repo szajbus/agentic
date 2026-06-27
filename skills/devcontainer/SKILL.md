@@ -155,7 +155,28 @@ This is the one place the skill edits files *outside* `.devcontainer/`. Keep it
 minimal and call it out to the user. Skip entirely for projects with no
 host-facing server (libraries, CLIs).
 
-### 5. Tell the user the one-time setup
+### 5. Wire the worktree workflow (if the project uses one)
+
+`bin/worktree` is designed to be driven by a worktree workflow — one container
+stack per git worktree. The integration is **manager-agnostic**: any tool (or a
+plain `git worktree` script) wires in through two hooks. Read
+`references/worktree-workflow.md` for the full pattern and rules; the essence:
+
+- **On worktree create:** `bin/worktree up --name <stable-handle>` — pin the
+  Compose project name to the worktree's handle so `up`/`exec`/`down` all target
+  one stack, bring the container up, and write `.env` (incl. the git-mount paths
+  that make in-container commits work). Then exec the agent in with
+  `devcontainer exec` (its `--workspace-folder` defaults to cwd = the worktree).
+- **On worktree remove (pre-remove, before the dir is deleted):**
+  `bin/worktree down` — tear down that worktree's stack + per-project volumes,
+  preserving the shared caches. **Never `--caches` here** (siblings share them).
+
+If the project already has a worktree manager configured (e.g. a `.workmux.yaml`,
+or a custom script), **offer to wire these hooks into it**, using the example in
+`references/worktree-workflow.md`. Don't lock the skill to any one manager —
+workmux is just the worked example.
+
+### 6. Tell the user the one-time setup + lifecycle
 
 - Create the external cache volumes (otherwise `compose up` fails with
   "volume … could not be found"):
@@ -164,6 +185,16 @@ host-facing server (libraries, CLIs).
   `git config --local user.name "…"` and `git config --local user.email "…"`.
 - Bring it up: `bin/worktree up` (needs the `devcontainer` CLI:
   `npm i -g @devcontainers/cli`).
+
+Also give them the day-to-day lifecycle in one breath:
+
+- `bin/worktree up` — (re)build + start this worktree's stack and run post-create.
+- `bin/worktree status` — show stack status.
+- `bin/worktree down` — remove this worktree's containers + per-project volumes
+  (shared caches kept); run it before deleting the worktree dir.
+- `bin/worktree down --caches` — same, but also drop the shared caches (only when
+  you're done with the whole project).
+- Open a shell / run the app: `devcontainer exec zsh`.
 
 Point them at the generated `.devcontainer/README.md` for the rest, especially
 the **Git: identity in, secrets out** section.

@@ -169,6 +169,7 @@ cmd_up() {
 
   if [[ -n "$cli_recreate" ]]; then
     devcontainer up --workspace-folder "$ROOT" --remove-existing-container
+    print_up_summary "$name" "$port"
     return
   fi
 
@@ -191,6 +192,23 @@ cmd_up() {
     echo "Workspace mount is stale (worktree likely recreated); recreating the dev container..."
     devcontainer up --workspace-folder "$ROOT" --remove-existing-container
   fi
+
+  print_up_summary "$name" "$port"
+}
+
+# Short post-setup message: what just came up and the lifecycle commands.
+print_up_summary() {
+  local name="$1" port="$2"
+  cat <<EOF
+
+Dev container '$name' is up on 127.0.0.1:$port.
+  Shell in:   devcontainer exec zsh
+  Lifecycle:  bin/worktree up      (re)start this worktree's stack
+              bin/worktree status  show stack status
+              bin/worktree down    remove it — containers + per-project volumes
+                                   (shared caches kept); run before deleting the
+                                   worktree dir
+EOF
 }
 
 cmd_down() {
