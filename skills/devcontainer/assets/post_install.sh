@@ -176,6 +176,12 @@ GI
 
 [diff]
     colorMoved = default
+
+# The repo / git common dir is bind-mounted from the host; UID is aligned via
+# updateRemoteUserUID, but mark it safe so git never blocks on dubious ownership
+# (relevant for git-worktree mounts where .git lives at a host absolute path).
+[safe]
+    directory = *
 GC
   log "Container git config created: $local_gitconfig"
   # Commit identity is NOT set here — it's configured per-repo with

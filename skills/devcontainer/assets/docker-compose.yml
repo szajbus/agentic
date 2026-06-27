@@ -37,11 +37,27 @@ services:
         source: ..
         target: /workspace
         consistency: delegated
-      # No host git config / SSH / signing keys are mounted: the container is
-      # self-contained. Base git config comes from ~/.gitconfig.local (written
-      # by post_install.sh); commit identity is set per-repo via
-      # `git config --local` in this bind-mounted repo (shared with the host);
-      # push and commit signing are done from the host.
+      # Git worktree support. A linked worktree's .git is just a pointer into the
+      # MAIN repo's .git/worktrees/<name>, which lives OUTSIDE this worktree dir
+      # and so is absent from the /workspace bind — without it, git can't find
+      # the object store/refs and commits fail. Mount the git common dir and the
+      # worktree's own host path at their REAL absolute paths (written to .env by
+      # bin/worktree) so the worktree's gitdir/commondir/back-pointers resolve.
+      # For a normal (non-worktree) checkout these are harmless self-mounts.
+      - type: bind
+        source: ${GIT_COMMON_DIR}
+        target: ${GIT_COMMON_DIR}
+        consistency: delegated
+      - type: bind
+        source: ${WORKTREE_HOST_DIR}
+        target: ${WORKTREE_HOST_DIR}
+        consistency: delegated
+      # Only this repo's own git store is mounted (above). No host ~/.gitconfig,
+      # SSH agent/keys, or push credentials are mounted: the container stays
+      # self-contained. Base git config comes from ~/.gitconfig.local (written by
+      # post_install.sh); commit identity is set per-repo via `git config
+      # --local` in the bind-mounted repo (shared with the host); push and commit
+      # signing are done from the host.
       # Persistent caches and config
       - commandhistory:/commandhistory
       - claude-config:/home/dev/.claude

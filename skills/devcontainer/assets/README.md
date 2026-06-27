@@ -162,6 +162,27 @@ copying.
 If you don't sign commits at all, just `git push` from the host — the point is
 that remote access and key material stay host-side.
 
+### Git worktrees
+
+This setup works when the project is a **linked git worktree**, not just a main
+clone. A worktree's `.git` is only a pointer into the main repo's
+`.git/worktrees/<name>`, which lives outside the worktree directory — so it isn't
+in the `/workspace` bind, and without help git inside the container can't find
+the object store (commits/log/status fail).
+
+`bin/worktree up` handles this automatically: it resolves the git common dir (the
+main repo's `.git`) and the worktree's own path and mounts both into the container
+**at their real host paths**, so git just works. Those paths are written to
+`.devcontainer/.env` (gitignored). Caveats:
+
+- Bring the container up with **`bin/worktree up`** (not raw `docker compose`), so
+  the paths get computed and written.
+- If you **move** the worktree on the host, re-run `bin/worktree up` to refresh
+  the mounts.
+- The main repo's `.git` is mounted read-write (commits write to the shared
+  object store). Still no SSH keys, host `~/.gitconfig`, or push credentials —
+  push and signing remain host-side, as above.
+
 ## Troubleshooting
 
 - **`Author identity unknown` / `unable to auto-detect email address` on

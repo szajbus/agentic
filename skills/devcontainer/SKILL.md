@@ -55,7 +55,14 @@ These invariants are the whole point. They are the same for every project:
    derives a Compose project name from the worktree directory, auto-picks a free
    port, and recovers from stale bind mounts. Per-project volumes (history, DB,
    agent config) are scoped to the worktree; expensive toolchain caches (deps,
-   build artifacts) are *external* volumes shared across worktrees.
+   build artifacts) are *external* volumes shared across worktrees. For **linked
+   git worktrees**, it also mounts the git common dir (the main repo's `.git`)
+   and the worktree's host path at their real absolute paths, so git actually
+   works in the container — a worktree's `.git` is only a pointer into the main
+   repo's `.git`, which is otherwise outside the `/workspace` bind. See
+   `references/principles.md` → "Making git itself work inside a linked
+   worktree". Keep this intact; it's the difference between commits working and
+   failing.
 
 If the user wants to drop one of these, that's their call — but flag it
 explicitly as weakening the security model, don't silently comply.

@@ -123,6 +123,37 @@ Volume scoping reflects the same split:
   `external: true` so Compose won't try to manage their lifecycle. They must be
   created once up front (`docker volume create …`).
 
+### Making git itself work inside a linked worktree
+
+A subtlety that bites every worktree-in-a-container setup: a **linked worktree's
+`.git` is not a real git dir — it's a pointer.** The worktree's `.git` file
+reads `gitdir: <main-repo>/.git/worktrees/<name>`, pointing into the *main*
+repo's `.git`, which lives **outside** the worktree directory. The compose file
+bind-mounts only the worktree dir to `/workspace`, so inside the container that
+`gitdir:` path doesn't exist — git can't find the object store, refs, or index,
+and **every commit/log/status fails.**
+
+The fix is layout-agnostic and needs no specific git version: mount the **git
+common dir** (the main repo's `.git`) into the container **at the same absolute
+path it has on the host**. Worktree pointers are absolute, so they resolve with
+zero rewriting. `bin/worktree` also mounts the worktree's own host path at its
+real path, so the back-pointer in `.git/worktrees/<name>/gitdir` resolves too —
+keeping `git worktree list`/`prune` and auto-gc correct (otherwise auto-gc could
+prune the worktree because its recorded path is missing in the container).
+
+`bin/worktree` computes both paths (`git rev-parse --git-common-dir` + the
+worktree root), writes them to the gitignored `.devcontainer/.env`, and compose
+mounts `source == target` for each. For a normal (non-worktree) checkout the two
+are inside / equal to the workspace already, so they're harmless self-mounts.
+
+This does **not** widen the security boundary from principle #1. The worktree
+already shares the main repo's object store, so the agent could already read all
+history; the mount just makes git functional. No host `~/.gitconfig`, SSH agent,
+SSH keys, or push credentials are mounted — the agent still cannot push or sign.
+A bind-mounted `.git` is owned by the host user (UID-aligned), and the container
+git config sets `safe.directory = *` so git doesn't balk at the host-absolute
+mount paths.
+
 ## What is generic vs. what varies
 
 Generic (copy near-verbatim): the git boundary, the bypassPermissions +

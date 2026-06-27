@@ -81,6 +81,30 @@ pick_free_port() {
   echo "$p"
 }
 
+# Resolve the absolute host paths the container must mount so git worktrees
+# work inside it. A linked worktree's .git is a pointer into the MAIN repo's
+# .git/worktrees/<name>, which lives outside this worktree dir and so isn't in
+# the /workspace bind — without it, git can't find the object store and commits
+# fail. We mount the git common dir (the main repo's .git for a linked worktree,
+# or this repo's .git otherwise) and the worktree's own host path, both at their
+# real absolute paths, so the pointers resolve. For a normal checkout these are
+# harmless self-mounts. Sets GIT_COMMON_DIR and WORKTREE_HOST_DIR.
+compute_git_mounts() {
+  WORKTREE_HOST_DIR="$ROOT"
+  local common
+  if common=$(cd "$ROOT" && git rev-parse --git-common-dir 2>/dev/null); then
+    case "$common" in
+      /*) ;;
+      *) common="$ROOT/$common" ;;
+    esac
+    GIT_COMMON_DIR=$(cd "$common" && pwd)
+  else
+    # Not a git repo (unusual here) — fall back to a harmless, existing path so
+    # compose still gets a valid source and never creates a stray dir.
+    GIT_COMMON_DIR="$ROOT"
+  fi
+}
+
 write_env() {
   local name="$1" port="$2"
   cat > "$ENV_FILE" <<EOF
@@ -89,6 +113,11 @@ write_env() {
 # project dir. Edit and re-run \`bin/worktree up\` to apply.
 COMPOSE_PROJECT_NAME=$name
 PORT=$port
+# Absolute host paths mounted into the container at the same path so git
+# worktrees resolve (the linked worktree's .git points into the main repo's
+# .git, which lives outside /workspace). See docker-compose.yml / README.
+GIT_COMMON_DIR=$GIT_COMMON_DIR
+WORKTREE_HOST_DIR=$WORKTREE_HOST_DIR
 EOF
   echo "Wrote $ENV_FILE (COMPOSE_PROJECT_NAME=$name, PORT=$port)"
 }
@@ -127,9 +156,11 @@ cmd_up() {
     port="$new_port"
   fi
 
-  if [[ ! -f "$ENV_FILE" || "$cur_name" != "$name" || "$cur_port" != "$port" ]]; then
-    write_env "$name" "$port"
-  fi
+  # Always (re)write .env: it also carries the absolute git-mount paths, which
+  # must be present for compose even when name/port are unchanged, and which
+  # move if the worktree is relocated.
+  compute_git_mounts
+  write_env "$name" "$port"
 
   if [[ -n "$cli_recreate" ]]; then
     devcontainer up --workspace-folder "$ROOT" --remove-existing-container
