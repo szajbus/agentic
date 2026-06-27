@@ -44,8 +44,13 @@ These invariants are the whole point. They are the same for every project:
    caps the blast radius of a runaway or compromised agent.
 3. **Non-root user, host UID/GID aligned** (`remoteUser` + `updateRemoteUserUID`,
    plus an ownership fix on mounted volumes in post-create).
-4. **Loopback-only port exposure** (`127.0.0.1:...`) — never expose the app port
-   on all interfaces.
+4. **Loopback on the host; bind host configurable, never hardcoded.** Publish the
+   app port as `127.0.0.1:...` (host loopback only). The in-container server must
+   bind `0.0.0.0` for the forward to work — but supply that via an env var
+   (`BIND_HOST`, default `127.0.0.1` in the project's committed config, set to
+   `0.0.0.0` only in compose). **Never** hardcode `0.0.0.0` in the project's
+   checked-in config — that would expose servers run directly on the host. See
+   `references/stack-specific.md` for per-framework wiring.
 5. **Per-worktree isolation with shared toolchain caches.** `bin/worktree`
    derives a Compose project name from the worktree directory, auto-picks a free
    port, and recovers from stale bind mounts. Per-project volumes (history, DB,
@@ -113,7 +118,22 @@ fence and resolve it. Don't leave a template token in generated output. (One
 expected exception: `bin/worktree` contains Docker's own `{{.Names}}`
 Go-template literal — leave it as-is; it is not a skill placeholder.)
 
-### 4. Tell the user the one-time setup
+### 4. Wire the app's bind host (only if the server must be reachable from the host)
+
+If the project runs a server you'll hit from the host (web app, API, dev server),
+it must bind `0.0.0.0` *inside the container* — but do that **without** hardcoding
+`0.0.0.0` in the project's committed config. Make the smallest possible edit to
+the project's own dev config so the bind address reads from `BIND_HOST`,
+**defaulting to `127.0.0.1`**. Compose already sets `BIND_HOST: 0.0.0.0` for the
+container. This keeps a host-run server on loopback while letting the in-container
+server be reachable. Per-framework snippets (Phoenix, Node, Python, Rails, Go) are
+in `references/stack-specific.md` → "Making the app reachable from the host".
+
+This is the one place the skill edits files *outside* `.devcontainer/`. Keep it
+minimal and call it out to the user. Skip entirely for projects with no
+host-facing server (libraries, CLIs).
+
+### 5. Tell the user the one-time setup
 
 - Create the external cache volumes (otherwise `compose up` fails with
   "volume … could not be found"):

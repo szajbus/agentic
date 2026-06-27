@@ -64,11 +64,31 @@ host ownership. Because Docker often creates named volumes as root, post-create
 runs a `fix_ownership` pass that `chown`s the agent/gh/cache dirs back to the
 dev user.
 
-## 4. Loopback-only ports
+## 4. Loopback on the host; bind host configurable, never hardcoded
 
-The app port is published as `127.0.0.1:${PORT}:${PORT}` — bound to loopback,
-never `0.0.0.0`. The dev server is reachable from the host but not from the
-network.
+Two distinct layers, easy to conflate:
+
+- **Host-side publishing.** The app port is published as
+  `127.0.0.1:${PORT}:${PORT}` — bound to host loopback, never `0.0.0.0`. So even
+  while the container is up, the dev server is reachable from your machine but
+  not from the local network.
+- **In-container bind address.** For Docker's port forward to reach the server,
+  the process *inside the container* must bind `0.0.0.0` — the forward arrives on
+  the container's `eth0`, not its loopback, so a server bound to `127.0.0.1`
+  inside the container is unreachable from the host.
+
+The trap: hardcoding `0.0.0.0` in the project's committed dev config to satisfy
+the second point. That config is shared with the host — so anyone who later runs
+the dev server **directly on the host** (outside the container) now binds it to
+all interfaces and exposes it on the network. The container shouldn't impose that
+regression on host workflows.
+
+The fix is stack-agnostic: the server's bind address comes from an env var
+(`BIND_HOST`), **defaulting to `127.0.0.1`** in committed config (safe on the
+host). Only the devcontainer's compose sets `BIND_HOST: 0.0.0.0`, so just the
+in-container server listens broadly — and even then host exposure stays loopback
+because of the `127.0.0.1:` publish prefix. **Never hardcode `0.0.0.0` in
+checked-in config.** Per-framework wiring is in `stack-specific.md`.
 
 ## 5. Per-worktree isolation + shared toolchain caches
 

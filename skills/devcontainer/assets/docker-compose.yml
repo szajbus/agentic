@@ -18,6 +18,11 @@ services:
       GIT_CONFIG_GLOBAL: /home/dev/.gitconfig.local
       POWERLEVEL9K_DISABLE_GITSTATUS: "true"
       PORT: "${PORT:-{{DEFAULT_PORT}}}"
+      # The in-container server must bind all interfaces for Docker's port
+      # forward to reach it. The app reads BIND_HOST (default 127.0.0.1 in
+      # committed config) so host-run servers stay on loopback; only this
+      # container overrides it to 0.0.0.0. Never hardcode 0.0.0.0 in app config.
+      BIND_HOST: 0.0.0.0
 # >>> STACK:db_env
       DATABASE_HOST: db
       POSTGRES_USER: postgres

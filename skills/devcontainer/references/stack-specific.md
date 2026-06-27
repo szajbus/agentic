@@ -84,6 +84,84 @@ pinning the base image by digest.
 - Bootstrap: `bundle install`; `bin/rails db:prepare`.
 - Gitignore: `/tmp/`, `/log/`, `*.gem`.
 
+## Making the app reachable from the host (bind host)
+
+If the project serves something you'll open from the host, the in-container
+server must bind `0.0.0.0` (Docker's port forward lands on the container's
+`eth0`, not loopback). But **don't hardcode `0.0.0.0` in committed config** — it
+would expose a server someone later runs directly on the host. Instead read the
+bind address from `BIND_HOST`, defaulting to `127.0.0.1`. Compose already exports
+`BIND_HOST: 0.0.0.0` for the container. Make the smallest edit that does this in
+the project's *own* dev config. Pair it with reading `PORT` (compose sets that
+too) so the published port matches.
+
+### Elixir / Phoenix — `config/dev.exs`
+
+Phoenix's `:ip` option wants an address tuple, so parse the env var:
+
+```elixir
+bind_ip =
+  "BIND_HOST"
+  |> System.get_env("127.0.0.1")
+  |> String.to_charlist()
+  |> :inet.parse_address()
+  |> case do
+    {:ok, ip} -> ip
+    _ -> {127, 0, 0, 1}
+  end
+
+config :my_app, MyAppWeb.Endpoint,
+  http: [ip: bind_ip, port: String.to_integer(System.get_env("PORT") || "4000")],
+  # ...rest unchanged
+```
+
+This replaces the default hardcoded `ip: {127, 0, 0, 1}` — note the default is
+still loopback, so `mix phx.server` on the host is unchanged.
+
+### Node — server / Vite / Next
+
+```js
+const host = process.env.BIND_HOST || "127.0.0.1";
+const port = process.env.PORT || 3000;
+app.listen(port, host);                       // Express/http
+// Vite:  server: { host: process.env.BIND_HOST || "127.0.0.1" }
+// Next:  next dev -H ${BIND_HOST:-127.0.0.1} -p ${PORT:-3000}
+```
+
+### Python — Django / Flask / uvicorn
+
+```sh
+# Django (in a run script / bootstrap):
+python manage.py runserver "${BIND_HOST:-127.0.0.1}:${PORT:-8000}"
+# uvicorn:
+uvicorn app:app --host "${BIND_HOST:-127.0.0.1}" --port "${PORT:-8000}"
+```
+```python
+# Flask:
+app.run(host=os.environ.get("BIND_HOST", "127.0.0.1"),
+        port=int(os.environ.get("PORT", "5000")))
+```
+
+### Ruby / Rails
+
+```sh
+bin/rails server -b "${BIND_HOST:-127.0.0.1}" -p "${PORT:-3000}"
+```
+
+### Go
+
+```go
+host := os.Getenv("BIND_HOST")
+if host == "" { host = "127.0.0.1" }
+port := os.Getenv("PORT")
+if port == "" { port = "8080" }
+http.ListenAndServe(net.JoinHostPort(host, port), mux)
+```
+
+If a framework only accepts the bind host as a CLI flag (Rails, Django, Vite),
+put the `${BIND_HOST:-127.0.0.1}` form in how the server is launched rather than
+editing source — same effect, no committed `0.0.0.0`.
+
 ## Deciding what to cache
 
 A dir is worth making a shared external cache when (a) it's expensive to

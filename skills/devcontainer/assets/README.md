@@ -77,6 +77,15 @@ environment (via `remoteEnv`) when set; auth also persists in the
 `claude-config` volume. In this container Claude runs in **`bypassPermissions`**
 mode (no per-action prompts) — see the security section below.
 
+### Network binding
+
+The app port is published to the host as `127.0.0.1:${PORT}` — **loopback only**,
+never the LAN. Inside the container the server binds `0.0.0.0` (required for
+Docker's port forward to reach it), driven by the `BIND_HOST` env var that compose
+sets. The project's committed config defaults `BIND_HOST` to `127.0.0.1`, so if
+you run the dev server **directly on the host** it stays on loopback. Don't
+hardcode `0.0.0.0` in app config.
+
 ### Commit identity
 
 Set once per clone (see [Git: identity in, secrets out](#git-identity-in-secrets-out)):
