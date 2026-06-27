@@ -1,0 +1,84 @@
+services:
+  app:
+    build:
+      context: .
+      dockerfile: Dockerfile
+      args:
+        TZ: "${TZ:-UTC}"
+    command: sleep infinity
+    cap_add:
+      - NET_ADMIN
+      - NET_RAW
+# >>> STACK:depends_on
+    depends_on:
+      - db
+# <<< STACK:depends_on
+    environment:
+      CLAUDE_CONFIG_DIR: /home/dev/.claude
+      GIT_CONFIG_GLOBAL: /home/dev/.gitconfig.local
+      POWERLEVEL9K_DISABLE_GITSTATUS: "true"
+      PORT: "${PORT:-{{DEFAULT_PORT}}}"
+# >>> STACK:db_env
+      DATABASE_HOST: db
+      POSTGRES_USER: postgres
+      POSTGRES_PASSWORD: postgres
+# <<< STACK:db_env
+    init: true
+    ports:
+      - "127.0.0.1:${PORT:-{{DEFAULT_PORT}}}:${PORT:-{{DEFAULT_PORT}}}"
+    volumes:
+      # Workspace bind mount (consistency=delegated for macOS fs perf)
+      - type: bind
+        source: ..
+        target: /workspace
+        consistency: delegated
+      # No host git config / SSH / signing keys are mounted: the container is
+      # self-contained. Base git config comes from ~/.gitconfig.local (written
+      # by post_install.sh); commit identity is set per-repo via
+      # `git config --local` in this bind-mounted repo (shared with the host);
+      # push and commit signing are done from the host.
+      # Persistent caches and config
+      - commandhistory:/commandhistory
+      - claude-config:/home/dev/.claude
+      - gh-config:/home/dev/.config/gh
+# >>> STACK:cache_mounts
+      # Shared toolchain caches (one mount per external cache volume), e.g.
+      # - hex-cache:/home/dev/.hex
+      # - mix-cache:/home/dev/.mix
+# <<< STACK:cache_mounts
+
+# >>> STACK:services
+  db:
+    image: postgres:16-alpine
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: postgres
+      POSTGRES_PASSWORD: postgres
+      POSTGRES_DB: {{PROJECT_SLUG}}_dev
+    volumes:
+      - db-data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U postgres"]
+      interval: 5s
+      timeout: 3s
+      retries: 10
+# <<< STACK:services
+
+volumes:
+  # Per-project (scoped to COMPOSE_PROJECT_NAME):
+  commandhistory:
+  claude-config:
+  gh-config:
+# >>> STACK:db_volume
+  db-data:
+# <<< STACK:db_volume
+# >>> STACK:cache_volumes
+  # Shared across all worktrees / projects (must be created up front with
+  # `docker volume create`). One block per cache, naming it {{PROJECT_SLUG}}-<name>-cache:
+  # hex-cache:
+  #   external: true
+  #   name: {{PROJECT_SLUG}}-hex-cache
+  # mix-cache:
+  #   external: true
+  #   name: {{PROJECT_SLUG}}-mix-cache
+# <<< STACK:cache_volumes

@@ -1,0 +1,17 @@
+{
+  "$schema": "https://raw.githubusercontent.com/devcontainers/spec/main/schemas/devContainer.schema.json",
+  "name": "{{PROJECT_NAME}}",
+  "dockerComposeFile": "docker-compose.yml",
+  "service": "app",
+  "workspaceFolder": "/workspace",
+  "remoteUser": "dev",
+  "updateRemoteUserUID": true,
+  "mounts": [
+    "source=${localWorkspaceFolder}/.devcontainer,target=/workspace/.devcontainer,type=bind,readonly"
+  ],
+  "remoteEnv": {
+    "CLAUDE_CODE_OAUTH_TOKEN": "${localEnv:CLAUDE_CODE_OAUTH_TOKEN:}",
+    "ANTHROPIC_API_KEY": "${localEnv:ANTHROPIC_API_KEY:}"
+  },
+  "postCreateCommand": "/opt/post_install.sh"
+}
