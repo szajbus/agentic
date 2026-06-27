@@ -101,7 +101,11 @@ simultaneously, without port clashes or rebuilding caches per worktree.
   valid Compose chars), so each worktree gets its own isolated stack.
 - **Auto-picks a free port** starting at the default, skipping ports already
   taken (except one already published by this project), and writes the chosen
-  name+port to `.devcontainer/.env` (which Compose auto-loads).
+  name+port to `.devcontainer/.env` (which Compose auto-loads). That file holds
+  machine/worktree-specific values, so it is **gitignored**, not committed — the
+  generator adds `/.devcontainer/.env` to the project's `.gitignore`. It stays
+  named `.env` (not `.env.local`) because Compose only auto-loads `.env` and
+  resolves `COMPOSE_PROJECT_NAME` / `${PORT}` interpolation from it.
 - **Uses the `devcontainer` CLI, not raw `docker compose up`** — that's what runs
   `postCreateCommand` and stamps the locator labels `devcontainer exec` needs.
 - **Recovers from stale bind mounts.** If a worktree dir is removed and recreated

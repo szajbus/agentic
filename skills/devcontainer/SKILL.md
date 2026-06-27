@@ -113,6 +113,21 @@ Files to generate:
 - `.devcontainer/README.md`
 - `bin/worktree` (chmod +x)
 
+Also ensure the **target project's `.gitignore`** ignores the per-worktree env
+file `bin/worktree` generates:
+
+```
+/.devcontainer/.env
+```
+
+Append it if missing (create `.gitignore` if the project has none). This file
+holds machine/worktree-specific values (`COMPOSE_PROJECT_NAME`, `PORT`) and must
+not be committed. Keep it named `.env` (not `.env.local`): Docker Compose
+**auto-loads only `.env`** from the compose project directory and resolves the
+interpolation vars `COMPOSE_PROJECT_NAME` / `${PORT}` from it. `.env.local` is not
+a Compose convention, and a service `env_file:` cannot supply interpolation vars —
+so `.env` + gitignore is the correct mechanism, not a rename.
+
 After writing: do a final grep for any leftover `{{` placeholder or `STACK:`
 fence and resolve it. Don't leave a template token in generated output. (One
 expected exception: `bin/worktree` contains Docker's own `{{.Names}}`
