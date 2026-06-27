@@ -10,9 +10,14 @@
 #       container if its /workspace bind mount has gone stale (e.g. the worktree
 #       was recreated). Pass --recreate to force-recreate unconditionally.
 #
-#   bin/worktree down
-#       Stop the stack and remove its per-project volumes. Shared caches
-#       are preserved.
+#   bin/worktree down [--caches]
+#       Tear down THIS worktree's stack: stop and remove its containers, default
+#       network, and per-project volumes (shell history, agent/gh config, DB
+#       data), and delete .devcontainer/.env. Shared toolchain caches are
+#       preserved for other worktrees. Run this BEFORE deleting the worktree
+#       directory (this script lives inside it). Pass --caches to ALSO remove the
+#       shared external caches — use only when you're done with the whole project
+#       (other worktrees would have to rebuild them).
 #
 #   bin/worktree status
 #       Show stack status.
@@ -189,7 +194,46 @@ cmd_up() {
 }
 
 cmd_down() {
-  docker compose -f "$COMPOSE_FILE" down -v
+  local purge_caches=""
+  while [[ $# -gt 0 ]]; do
+    case "$1" in
+      --caches) purge_caches=1; shift ;;
+      -h|--help) usage; exit 0 ;;
+      *) echo "Unknown arg: $1" >&2; exit 1 ;;
+    esac
+  done
+
+  local project=""
+  if [[ -f "$ENV_FILE" ]]; then
+    project=$(grep -E '^COMPOSE_PROJECT_NAME=' "$ENV_FILE" | head -1 | cut -d= -f2-)
+  fi
+
+  # Remove this worktree's containers, its default network, and its per-project
+  # volumes (history, agent/gh config, DB data). The shared toolchain caches are
+  # declared `external: true`, so `down -v` deliberately leaves them intact for
+  # other worktrees. --remove-orphans sweeps any leftover services.
+  docker compose -f "$COMPOSE_FILE" down -v --remove-orphans
+
+  # Drop the per-worktree env file; the next `up` regenerates it.
+  if [[ -f "$ENV_FILE" ]]; then
+    rm -f "$ENV_FILE"
+    echo "Removed $ENV_FILE"
+  fi
+
+  local label="stack"
+  [[ -n "$project" ]] && label="stack '$project'"
+  echo "Tore down $label: containers + per-project volumes removed; shared caches preserved."
+
+  if [[ -n "$purge_caches" ]]; then
+    echo "Removing shared toolchain caches (other worktrees of this project will rebuild them)..."
+    for v in "${SHARED_VOLUMES[@]}"; do
+      if docker volume rm "$v" >/dev/null 2>&1; then
+        echo "Removed shared volume: $v"
+      else
+        echo "Kept shared volume (missing, or still in use by a running container): $v" >&2
+      fi
+    done
+  fi
 }
 
 cmd_status() {
@@ -201,7 +245,7 @@ shift || true
 
 case "$cmd" in
   up)     cmd_up "$@" ;;
-  down)   cmd_down ;;
+  down)   cmd_down "$@" ;;
   status) cmd_status ;;
   -h|--help|"") usage ;;
   *) echo "Unknown command: $cmd" >&2; usage; exit 1 ;;

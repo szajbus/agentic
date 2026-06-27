@@ -49,9 +49,21 @@ The simplest path is the bundled lifecycle helper, which handles project naming,
 free-port selection, and shared volumes for you:
 
 ```sh
-bin/worktree up        # build + start + run post-create
-bin/worktree status    # show stack status
-bin/worktree down      # stop + remove per-project volumes (caches survive)
+bin/worktree up            # build + start + run post-create
+bin/worktree status        # show stack status
+bin/worktree down          # tear down this worktree's stack (caches survive)
+bin/worktree down --caches # also remove the shared caches (whole-project teardown)
+```
+
+`down` removes this worktree's containers, network, and per-project volumes
+(history, agent/gh config, DB data) and deletes `.devcontainer/.env`; the shared
+toolchain caches are kept for your other worktrees. Run it **before** deleting the
+worktree directory — once the directory is gone, so is this script. Typical
+cleanup after merging a branch:
+
+```sh
+bin/worktree down                       # from inside the worktree
+git worktree remove ../path-to-worktree # then drop the worktree (run from the main checkout)
 ```
 
 ### Alternatives
