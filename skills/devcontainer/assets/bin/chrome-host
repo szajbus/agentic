@@ -1,0 +1,58 @@
+#!/usr/bin/env bash
+# Run a headless Chrome on the HOST with a CDP relay the dev container can reach.
+#
+# Why a relay: Chrome binds its --remote-debugging-port to 127.0.0.1 only (the
+# bind-address flag was removed for security), so a container can't reach it
+# directly. socat re-exposes it on a routable port. The container then connects
+# by the gateway IP (Chrome's CDP rejects non-IP/localhost Host headers, so the
+# hostname won't do) — see bin/chrome-cdp.
+#
+# SECURITY: the relay listens on all interfaces, so anyone who can reach this
+# host on the relay port can drive the browser (and a browser can open file://
+# and intranet URLs). Run only on a trusted network, and stop it (Ctrl-C) when
+# you're done. This is a deliberate, dev-only hole in the "secrets stay
+# host-side" model — keep it closed unless you're actively using it.
+set -euo pipefail
+
+DEBUG_PORT="${CHROME_DEBUG_PORT:-9222}"   # Chrome CDP (loopback)
+RELAY_PORT="${CHROME_RELAY_PORT:-9223}"   # relay the container connects to
+PROFILE="$(mktemp -d)"
+
+command -v socat >/dev/null 2>&1 || { echo "socat not found — install it (macOS: brew install socat)." >&2; exit 1; }
+
+CHROME="${CHROME_BIN:-}"
+if [[ -z "$CHROME" ]]; then
+  for c in \
+    "/Applications/Google Chrome.app/Contents/MacOS/Google Chrome" \
+    "/Applications/Chromium.app/Contents/MacOS/Chromium" \
+    "$(command -v google-chrome 2>/dev/null || true)" \
+    "$(command -v chromium 2>/dev/null || true)"; do
+    if [[ -n "$c" && -x "$c" ]]; then CHROME="$c"; break; fi
+  done
+fi
+[[ -n "$CHROME" ]] || { echo "Chrome/Chromium not found — set CHROME_BIN to its path." >&2; exit 1; }
+
+CHROME_PID="" SOCAT_PID=""
+cleanup() { kill "$CHROME_PID" "$SOCAT_PID" 2>/dev/null || true; rm -rf "$PROFILE"; }
+trap cleanup EXIT INT TERM
+
+"$CHROME" --headless=new --disable-gpu \
+  --remote-debugging-port="$DEBUG_PORT" --remote-allow-origins='*' \
+  --user-data-dir="$PROFILE" --no-first-run --no-default-browser-check \
+  about:blank >/dev/null 2>&1 &
+CHROME_PID=$!
+
+# Wait for CDP to come up before exposing it.
+until curl -sf "http://127.0.0.1:${DEBUG_PORT}/json/version" >/dev/null 2>&1; do
+  kill -0 "$CHROME_PID" 2>/dev/null || { echo "Chrome exited before CDP was ready." >&2; exit 1; }
+  sleep 0.2
+done
+
+socat TCP-LISTEN:"${RELAY_PORT}",fork,reuseaddr TCP:127.0.0.1:"${DEBUG_PORT}" &
+SOCAT_PID=$!
+
+echo "Headless Chrome up — CDP on 127.0.0.1:${DEBUG_PORT}, relay on 0.0.0.0:${RELAY_PORT}."
+echo "In the container:  CDP=\$(bin/chrome-cdp)   # reachable CDP base URL"
+echo "Then point the dev app at it via:  http://localhost:\${PORT}"
+echo "Press Ctrl-C to stop."
+wait

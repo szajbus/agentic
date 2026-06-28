@@ -99,6 +99,13 @@ Keep it short. Confirm inferred values rather than asking open-endedly. Cover:
   become `{{slug}}-<name>-cache` external volumes.
 - **Default port** for the app (default 4400 if unknown).
 - **Optional**: install any Claude Code plugins/marketplaces at build time?
+- **Optional**: does the agent need to drive a **headless browser on the host**
+  (e.g. to screenshot / visually check the dev app)? Off by default. If yes, keep
+  the `STACK:browser` compose block, the `bin/chrome-host` + `bin/chrome-cdp`
+  helpers, and the `websocat` install in the Dockerfile (a no-Node CDP client),
+  and read `references/host-browser.md` — it opens a dev-only host control
+  channel, so flag the exposure to the user. If no, delete that block, both
+  scripts, and the `websocat` Dockerfile step.
 
 ### 3. Generate the files
 
@@ -119,6 +126,9 @@ Files to generate:
 - `.devcontainer/.zshrc`
 - `.devcontainer/README.md`
 - `bin/worktree` (chmod +x)
+- `bin/chrome-host`, `bin/chrome-cdp` (chmod +x) — **only if** the host-browser
+  feature is enabled; otherwise skip them and delete the `STACK:browser` compose
+  block. See `references/host-browser.md`.
 
 Also ensure the **target project's `.gitignore`** ignores the per-worktree env
 file `bin/worktree` generates:

@@ -29,6 +29,15 @@ services:
       POSTGRES_PASSWORD: postgres
 # <<< STACK:db_env
     init: true
+# >>> STACK:browser
+    # Reach a headless Chrome running on the HOST (for screenshots / visual
+    # checks of the dev app). The container resolves host.docker.internal to the
+    # host gateway; bin/chrome-host launches Chrome + a CDP relay, bin/chrome-cdp
+    # prints the reachable CDP URL. Opt-in and dev-only — see references/
+    # host-browser.md. Delete this block if the agent doesn't drive a browser.
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
+# <<< STACK:browser
     ports:
       - "127.0.0.1:${PORT:-{{DEFAULT_PORT}}}:${PORT:-{{DEFAULT_PORT}}}"
     volumes:

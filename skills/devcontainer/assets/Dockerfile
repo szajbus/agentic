@@ -58,6 +58,20 @@ RUN ARCH=$(dpkg --print-architecture) && \
     esac && \
     curl -fsSL "https://github.com/junegunn/fzf/releases/download/v${FZF_VERSION}/fzf-${FZF_VERSION}-${FZF_ARCH}.tar.gz" | tar -xz -C /usr/local/bin
 
+# websocat from GitHub release (static musl binary): a tiny WebSocket/CDP client
+# for driving a host-run headless Chrome over CDP (see bin/chrome-cdp and
+# references/host-browser.md). Harmless to keep; remove with the host-browser
+# feature if unused.
+ARG WEBSOCAT_VERSION=1.14.1
+RUN ARCH=$(dpkg --print-architecture) && \
+    case "${ARCH}" in \
+      amd64) WS_ARCH="x86_64-unknown-linux-musl" ;; \
+      arm64) WS_ARCH="aarch64-unknown-linux-musl" ;; \
+      *) echo "Unsupported architecture: ${ARCH}" && exit 1 ;; \
+    esac && \
+    curl -fsSL "https://github.com/vi/websocat/releases/download/v${WEBSOCAT_VERSION}/websocat.${WS_ARCH}" -o /usr/local/bin/websocat && \
+    chmod +x /usr/local/bin/websocat
+
 # Non-root user. Name is editor-neutral; UID/GID align to host via updateRemoteUserUID.
 ARG USERNAME=dev
 ARG USER_UID=1000

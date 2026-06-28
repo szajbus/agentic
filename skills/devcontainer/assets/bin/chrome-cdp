@@ -1,0 +1,26 @@
+#!/usr/bin/env bash
+# Print the CDP base URL for the host-run headless Chrome (started on the HOST
+# by bin/chrome-host). Run this INSIDE the container.
+#
+# Uses the gateway IP, not the `host.docker.internal` hostname, because Chrome's
+# CDP endpoints reject Host headers that aren't an IP literal or localhost. The
+# compose file maps host.docker.internal -> host-gateway, so we resolve it to an
+# IP here.
+set -euo pipefail
+
+RELAY_PORT="${CHROME_RELAY_PORT:-9223}"
+
+ip=$(getent hosts host.docker.internal 2>/dev/null | awk '{print $1; exit}')
+if [[ -z "$ip" ]]; then
+  echo "Cannot resolve host.docker.internal — is 'extra_hosts: host.docker.internal:host-gateway' set on the app service?" >&2
+  exit 1
+fi
+
+url="http://${ip}:${RELAY_PORT}"
+
+# Friendly connectivity probe (stderr, doesn't pollute the URL on stdout).
+if ! curl -sf "${url}/json/version" >/dev/null 2>&1; then
+  echo "Note: ${url} is not responding. Start Chrome on the host with bin/chrome-host." >&2
+fi
+
+echo "$url"

@@ -40,6 +40,7 @@ delete the whole region if not applicable.
 | `STACK:depends_on` | `docker-compose.yml` | the app's `depends_on`; delete if no services |
 | `STACK:db_env` | `docker-compose.yml` | app env vars pointing at the DB; delete if no DB |
 | `STACK:db_volume` | `docker-compose.yml` | the `db-data:` per-project volume decl; delete if no DB |
+| `STACK:browser` | `docker-compose.yml` | `extra_hosts` for host-browser access; delete (and skip `bin/chrome-*`) if the agent doesn't drive a host browser. See `host-browser.md` |
 | `STACK:cache_mounts` | `docker-compose.yml` | the app's cache volume mount lines |
 | `STACK:cache_volumes` | `docker-compose.yml` | the external cache volume declarations |
 | `STACK:bootstrap` | `post_install.sh` | the bootstrap function body (deps, DB create/migrate) |
