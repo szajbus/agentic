@@ -95,7 +95,7 @@ checked-in config.** Per-framework wiring is in `stack-specific.md`.
 This makes the setup pleasant to use across many git worktrees of the same repo
 simultaneously, without port clashes or rebuilding caches per worktree.
 
-`bin/worktree`:
+`bin/devcontainer`:
 
 - **Derives a Compose project name** from the worktree directory (sanitized to
   valid Compose chars), so each worktree gets its own isolated stack.
@@ -136,12 +136,12 @@ and **every commit/log/status fails.**
 The fix is layout-agnostic and needs no specific git version: mount the **git
 common dir** (the main repo's `.git`) into the container **at the same absolute
 path it has on the host**. Worktree pointers are absolute, so they resolve with
-zero rewriting. `bin/worktree` also mounts the worktree's own host path at its
+zero rewriting. `bin/devcontainer` also mounts the worktree's own host path at its
 real path, so the back-pointer in `.git/worktrees/<name>/gitdir` resolves too —
 keeping `git worktree list`/`prune` and auto-gc correct (otherwise auto-gc could
 prune the worktree because its recorded path is missing in the container).
 
-`bin/worktree` computes both paths (`git rev-parse --git-common-dir` + the
+`bin/devcontainer` computes both paths (`git rev-parse --git-common-dir` + the
 worktree root), writes them to the gitignored `.devcontainer/.env`, and compose
 mounts `source == target` for each. For a normal (non-worktree) checkout the two
 are inside / equal to the workspace already, so they're harmless self-mounts.
@@ -158,7 +158,7 @@ mount paths.
 
 Generic (copy near-verbatim): the git boundary, the bypassPermissions +
 onboarding setup, UID/GID alignment + ownership fix, loopback ports, the whole
-`bin/worktree` lifecycle, the `.zshrc`, tmux config, and the README's security
+`bin/devcontainer` lifecycle, the `.zshrc`, tmux config, and the README's security
 narrative.
 
 Stack-specific (filled by interview — see `stack-specific.md`): the base image,

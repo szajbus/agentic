@@ -12,12 +12,12 @@ fence comments so you can replace or delete a whole region cleanly.
 | `{{DEFAULT_PORT}}` | Default app port (loopback) | `4400` |
 | `{{BASE_IMAGE}}` | Toolchain base image, ideally digest-pinned (full `FROM` target) | `hexpm/elixir:1.20.0-erlang-28.5-debian-bookworm-20260610-slim@sha256:…` |
 | `{{CACHE_OWNERSHIP_DIRS}}` | Space-separated cache dirs for the ownership fix | `"$HOME/.hex" "$HOME/.mix"` |
-| `{{SHARED_VOLUMES}}` | Space-separated external cache volume names, in `bin/worktree` and `bin/devcontainer` (keep both in sync) | `tix-hex-cache tix-mix-cache` |
+| `{{SHARED_VOLUMES}}` | Space-separated external cache volume names, in `bin/devcontainer` | `tix-hex-cache tix-mix-cache` |
 
-> **Caveat — `{{.Names}}` in `bin/worktree` is NOT a placeholder.** It is a
+> **Caveat — `{{.Names}}` in `bin/devcontainer` is NOT a placeholder.** It is a
 > Docker Go-template literal (`docker ps --format '{{.Names}}'`). Leave it
 > exactly as-is. When you run the final `{{`-grep check, expect that one line in
-> `bin/worktree` to match, and ignore it. Everything else matching `{{` is a
+> `bin/devcontainer` to match, and ignore it. Everything else matching `{{` is a
 > real placeholder to resolve.
 
 ## Fenced stack blocks

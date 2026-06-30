@@ -2,8 +2,8 @@
 name: devcontainer
 description: >-
   Generate a reproducible, sandboxed Dev Container (devcontainer.json + Docker
-  Compose + Dockerfile + post-create script + a bin/worktree lifecycle helper +
-  a bin/devcontainer one-time setup helper + a README) for a project, following
+  Compose + Dockerfile + post-create script + a bin/devcontainer lifecycle
+  helper (setup + up/down/status) + a README) for a project, following
   a security-first "git identity in, secrets
   out" model where an unattended coding agent runs in bypassPermissions but has
   no SSH keys, no push credentials, and no host gitconfig — so it can only read
@@ -19,7 +19,7 @@ description: >-
 # Devcontainer generator
 
 Generate a sandboxed, reproducible Dev Container for a project. The output is a
-`.devcontainer/` folder, a `bin/worktree` lifecycle helper, and a README — built
+`.devcontainer/` folder, a `bin/devcontainer` lifecycle helper, and a README — built
 around a deliberate security boundary so an unattended coding agent (Claude Code
 in `bypassPermissions`) is safe to run.
 
@@ -52,7 +52,7 @@ These invariants are the whole point. They are the same for every project:
    `0.0.0.0` only in compose). **Never** hardcode `0.0.0.0` in the project's
    checked-in config — that would expose servers run directly on the host. See
    `references/stack-specific.md` for per-framework wiring.
-5. **Per-worktree isolation with shared toolchain caches.** `bin/worktree`
+5. **Per-worktree isolation with shared toolchain caches.** `bin/devcontainer`
    derives a Compose project name from the worktree directory, auto-picks a free
    port, and recovers from stale bind mounts. Per-project volumes (history, DB,
    agent config) are scoped to the worktree; expensive toolchain caches (deps,
@@ -74,7 +74,7 @@ explicitly as weakening the security model, don't silently comply.
 
 Default target is the current repo (or a path the user gives). Determine:
 
-- Is it a git repo? (`bin/worktree` and the identity model assume git.)
+- Is it a git repo? (`bin/devcontainer` and the identity model assume git.)
 - Language / runtime and how deps + builds work (look for `mix.exs`,
   `package.json`, `pyproject.toml`/`requirements.txt`, `go.mod`, `Gemfile`,
   `Cargo.toml`, etc.).
@@ -126,18 +126,17 @@ Files to generate:
 - `.devcontainer/post_install.sh` (chmod +x)
 - `.devcontainer/.zshrc`
 - `.devcontainer/README.md`
-- `bin/worktree` (chmod +x)
-- `bin/devcontainer` (chmod +x) — one-time, per-clone `setup` command that
-  creates the shared cache volumes, seeds commit identity from the host's global
-  git config (or prints how to set it), and checks prerequisites. Lives
-  alongside `bin/worktree`; shares the `{{SHARED_VOLUMES}}` and `{{PROJECT_NAME}}`
-  placeholders.
+- `bin/devcontainer` (chmod +x) — the single lifecycle helper: `setup` (one-time
+  per-clone: create cache volumes, seed commit identity from the host's global
+  git config or print how to set it, check prerequisites) plus `up` / `down` /
+  `status`. It is worktree-aware automatically (worktree vs main clone is
+  detected via git), so there is no separate worktree script.
 - `bin/chrome-host`, `bin/chrome-cdp` (chmod +x) — **only if** the host-browser
   feature is enabled; otherwise skip them and delete the `STACK:browser` compose
   block. See `references/host-browser.md`.
 
 Also ensure the **target project's `.gitignore`** ignores the per-worktree env
-file `bin/worktree` generates:
+file `bin/devcontainer` generates:
 
 ```
 /.devcontainer/.env
@@ -153,7 +152,7 @@ so `.env` + gitignore is the correct mechanism, not a rename.
 
 After writing: do a final grep for any leftover `{{` placeholder or `STACK:`
 fence and resolve it. Don't leave a template token in generated output. (One
-expected exception: `bin/worktree` contains Docker's own `{{.Names}}`
+expected exception: `bin/devcontainer` contains Docker's own `{{.Names}}`
 Go-template literal — leave it as-is; it is not a skill placeholder.)
 
 ### 4. Wire the app's bind host (only if the server must be reachable from the host)
@@ -173,19 +172,20 @@ host-facing server (libraries, CLIs).
 
 ### 5. Wire the worktree workflow (if the project uses one)
 
-`bin/worktree` is designed to be driven by a worktree workflow — one container
-stack per git worktree. The integration is **manager-agnostic**: any tool (or a
-plain `git worktree` script) wires in through two hooks. Read
+`bin/devcontainer` is designed to be driven by a worktree workflow — one
+container stack per git worktree. The integration is **manager-agnostic**: any
+tool (or a plain `git worktree` script) wires in through two hooks. Read
 `references/worktree-workflow.md` for the full pattern and rules; the essence:
 
-- **On worktree create:** `bin/worktree up --name <stable-handle>` — pin the
+- **On worktree create:** `bin/devcontainer up --name <stable-handle>` — pin the
   Compose project name to the worktree's handle so `up`/`exec`/`down` all target
   one stack, bring the container up, and write `.env` (incl. the git-mount paths
   that make in-container commits work). Then exec the agent in with
   `devcontainer exec` (its `--workspace-folder` defaults to cwd = the worktree).
 - **On worktree remove (pre-remove, before the dir is deleted):**
-  `bin/worktree down` — tear down that worktree's stack + per-project volumes,
-  preserving the shared caches. **Never `--caches` here** (siblings share them).
+  `bin/devcontainer down` — tear down that worktree's stack + per-project
+  volumes, preserving the shared caches. **Never `--caches` here** (siblings
+  share them).
 
 If the project already has a worktree manager configured (e.g. a `.workmux.yaml`,
 or a custom script), **offer to wire these hooks into it**, using the example in
@@ -202,16 +202,16 @@ workmux is just the worked example.
   Idempotent — safe to re-run. The underlying manual steps, if they prefer:
   `docker volume create {{slug}}-<name>-cache` per cache, then `git config
   --local user.name "…"` / `git config --local user.email "…"`.
-- Bring it up: `bin/worktree up` (needs the `devcontainer` CLI:
+- Bring it up: `bin/devcontainer up` (needs the `devcontainer` CLI:
   `npm i -g @devcontainers/cli`).
 
 Also give them the day-to-day lifecycle in one breath:
 
-- `bin/worktree up` — (re)build + start this worktree's stack and run post-create.
-- `bin/worktree status` — show stack status.
-- `bin/worktree down` — remove this worktree's containers + per-project volumes
-  (shared caches kept); run it before deleting the worktree dir.
-- `bin/worktree down --caches` — same, but also drop the shared caches (only when
+- `bin/devcontainer up` — (re)build + start this checkout's stack and run post-create.
+- `bin/devcontainer status` — show stack status.
+- `bin/devcontainer down` — remove this checkout's containers + per-project volumes
+  (shared caches kept); run it before deleting a worktree dir.
+- `bin/devcontainer down --caches` — same, but also drop the shared caches (only when
   you're done with the whole project).
 - Open a shell / run the app: `devcontainer exec zsh`.
 
@@ -223,8 +223,8 @@ the **Git: identity in, secrets out** section.
 - Don't invent a stack profile you're unsure about — ask. A wrong base image or
   missing bootstrap step makes the container fail on first create, which is a
   bad first impression.
-- The `bin/worktree` logic (name sanitizing, free-port picking, stale-mount
-  recovery) is generic — only the shared cache volume names and default port are
-  project-specific. Keep the logic intact.
+- The `bin/devcontainer` lifecycle logic (name sanitizing, free-port picking,
+  stale-mount recovery) is generic — only the shared cache volume names and
+  default port are project-specific. Keep the logic intact.
 - This setup is editor-neutral (it follows the containers.dev spec, not VS Code
   specifics). Don't add VS Code-only keys unless asked.

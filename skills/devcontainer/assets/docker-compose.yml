@@ -51,7 +51,7 @@ services:
       # and so is absent from the /workspace bind — without it, git can't find
       # the object store/refs and commits fail. Mount the git common dir and the
       # worktree's own host path at their REAL absolute paths (written to .env by
-      # bin/worktree) so the worktree's gitdir/commondir/back-pointers resolve.
+      # bin/devcontainer) so the worktree's gitdir/commondir/back-pointers resolve.
       # For a normal (non-worktree) checkout these are harmless self-mounts.
       - type: bind
         source: ${GIT_COMMON_DIR}

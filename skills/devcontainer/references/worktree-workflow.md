@@ -1,6 +1,6 @@
-# Wiring `bin/worktree` into a git-worktree workflow
+# Wiring `bin/devcontainer` into a git-worktree workflow
 
-`bin/worktree` gives **one container stack per git worktree** — isolated
+`bin/devcontainer` gives **one container stack per git worktree** — isolated
 containers/ports/volumes per worktree, with shared toolchain caches. It's built
 to be driven by whatever creates and destroys your worktrees: a manager like
 workmux, or a hand-rolled `git worktree` script. The integration is the same
@@ -11,12 +11,12 @@ example — **don't lock the design to it.**
 
 1. **On worktree create** — bring the stack up, then exec the agent in:
    ```sh
-   bin/worktree up --name <stable-handle>
+   bin/devcontainer up --name <stable-handle>
    devcontainer exec zsh            # or: devcontainer exec <agent>
    ```
 2. **On worktree remove** — tear the stack down *before* the directory is deleted:
    ```sh
-   bin/worktree down
+   bin/devcontainer down
    ```
 
 ## Rules any integrator must follow
@@ -27,7 +27,7 @@ These are what make the difference between "it works" and subtle breakage:
   `$WM_HANDLE`). It becomes `COMPOSE_PROJECT_NAME` (written to
   `.devcontainer/.env`), so `up`, `devcontainer exec`, and `down` all agree on
   one stack. Without it, a manager that runs its own `devcontainer up` and
-  `bin/worktree` can end up driving two differently-named stacks for the same
+  `bin/devcontainer` can end up driving two differently-named stacks for the same
   worktree.
 - **Run `up` before you exec the agent.** Bring the stack up in a *blocking*
   create hook, not in a pane/command that races `devcontainer exec`. The exec
@@ -38,7 +38,7 @@ These are what make the difference between "it works" and subtle breakage:
   `.devcontainer/.env`; shared caches are preserved.
 - **Never use `down --caches` in a per-worktree remove hook.** Sibling worktrees
   share those external caches; `--caches` is for whole-project teardown only.
-- **Make it non-fatal:** `bin/worktree down || true` so a teardown hiccup never
+- **Make it non-fatal:** `bin/devcontainer down || true` so a teardown hiccup never
   blocks the manager's remove.
 - **Exec via `devcontainer exec`**, whose `--workspace-folder` defaults to the
   current directory. With the hook's cwd at the worktree root, it execs into
@@ -55,13 +55,13 @@ These are what make the difference between "it works" and subtle breakage:
 # create
 git worktree add ../app-feature feature
 cd ../app-feature
-bin/worktree up --name app-feature      # pins the stack name; commits work in-container
+bin/devcontainer up --name app-feature      # pins the stack name; commits work in-container
 devcontainer exec zsh                    # work inside the container
 
 # ... commit inside the container; sign + push on the host ...
 
-# remove (run down FIRST — bin/worktree lives in the worktree)
-bin/worktree down
+# remove (run down FIRST — bin/devcontainer lives in the worktree)
+bin/devcontainer down
 cd -
 git worktree remove ../app-feature
 ```
@@ -80,14 +80,14 @@ and file `copy` rules. A complete wiring:
 # COMPOSE_PROJECT_NAME so up/exec/down share one stack. Blocking (not a pane),
 # so it can't race the devcontainer exec below.
 post_create:
-  - bin/worktree up --name "$WM_HANDLE"
+  - bin/devcontainer up --name "$WM_HANDLE"
 
 # Tear the stack + per-project volumes down when the worktree is removed.
 # Shared caches are KEPT — do NOT add --caches (siblings use them). pre_remove
 # runs while the worktree still exists, so the script is still there. || true
 # so a hiccup never blocks `workmux rm`.
 pre_remove:
-  - bin/worktree down || true
+  - bin/devcontainer down || true
 
 # Run the agent INSIDE the container. As the `agent` (not a raw pane command)
 # so workmux's <agent> substitution and prompt-injection target it. exec's

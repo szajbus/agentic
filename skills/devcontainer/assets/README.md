@@ -56,10 +56,10 @@ The simplest path is the bundled lifecycle helper, which handles project naming,
 free-port selection, and shared volumes for you:
 
 ```sh
-bin/worktree up            # build + start + run post-create
-bin/worktree status        # show stack status
-bin/worktree down          # tear down this worktree's stack (caches survive)
-bin/worktree down --caches # also remove the shared caches (whole-project teardown)
+bin/devcontainer up            # build + start + run post-create
+bin/devcontainer status        # show stack status
+bin/devcontainer down          # tear down this worktree's stack (caches survive)
+bin/devcontainer down --caches # also remove the shared caches (whole-project teardown)
 ```
 
 `down` removes this worktree's containers, network, and per-project volumes
@@ -69,7 +69,7 @@ worktree directory — once the directory is gone, so is this script. Typical
 cleanup after merging a branch:
 
 ```sh
-bin/worktree down                       # from inside the worktree
+bin/devcontainer down                       # from inside the worktree
 git worktree remove ../path-to-worktree # then drop the worktree (run from the main checkout)
 ```
 
@@ -85,7 +85,7 @@ git worktree remove ../path-to-worktree # then drop the worktree (run from the m
   run — you'd run `/opt/post_install.sh` yourself).
 
 Override the port by exporting `PORT` before bringing the container up, or pass
-`--port` to `bin/worktree up`.
+`--port` to `bin/devcontainer up`.
 
 ## Configuration
 
@@ -191,14 +191,14 @@ clone. A worktree's `.git` is only a pointer into the main repo's
 in the `/workspace` bind, and without help git inside the container can't find
 the object store (commits/log/status fail).
 
-`bin/worktree up` handles this automatically: it resolves the git common dir (the
+`bin/devcontainer up` handles this automatically: it resolves the git common dir (the
 main repo's `.git`) and the worktree's own path and mounts both into the container
 **at their real host paths**, so git just works. Those paths are written to
 `.devcontainer/.env` (gitignored). Caveats:
 
-- Bring the container up with **`bin/worktree up`** (not raw `docker compose`), so
+- Bring the container up with **`bin/devcontainer up`** (not raw `docker compose`), so
   the paths get computed and written.
-- If you **move** the worktree on the host, re-run `bin/worktree up` to refresh
+- If you **move** the worktree on the host, re-run `bin/devcontainer up` to refresh
   the mounts.
 - The main repo's `.git` is mounted read-write (commits write to the shared
   object store). Still no SSH keys, host `~/.gitconfig`, or push credentials —
@@ -211,7 +211,7 @@ main repo's `.git`) and the worktree's own path and mounts both into the contain
   `git config --local` commands from [Commit identity](#commit-identity).
 - **`volume "…" could not be found`** — create the external cache volumes (see
   [Prerequisites](#prerequisites)).
-- **Port already in use** — set `PORT` to a free port, or let `bin/worktree up`
+- **Port already in use** — set `PORT` to a free port, or let `bin/devcontainer up`
   pick one.
 - **Claude asks you to log in** — ensure `CLAUDE_CODE_OAUTH_TOKEN` (or
   `ANTHROPIC_API_KEY`) is exported in the environment that launches the
