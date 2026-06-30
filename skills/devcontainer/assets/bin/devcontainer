@@ -82,12 +82,12 @@ check_devcontainer_cli() {
 ensure_shared_volumes() {
   local verbose="${1:-}"
   if [[ ${#SHARED_VOLUMES[@]} -eq 0 ]]; then
-    [[ -n "$verbose" ]] && echo "No shared cache volumes configured."
+    [[ -n "$verbose" ]] && echo "No shared cache volumes configured." || true
     return
   fi
   for v in "${SHARED_VOLUMES[@]}"; do
     if docker volume inspect "$v" >/dev/null 2>&1; then
-      [[ -n "$verbose" ]] && echo "Shared volume already exists: $v"
+      [[ -n "$verbose" ]] && echo "Shared volume already exists: $v" || true
     else
       docker volume create "$v" >/dev/null
       echo "Created shared volume: $v"
@@ -218,8 +218,8 @@ setup_git_identity() {
     echo
     echo "!! Could not set commit identity automatically — your global git config has no ${missing[*]}."
     echo "   Set it manually for this repo (writes to the bind-mounted .git/config, shared host+container):"
-    [[ " ${missing[*]} " == *" user.name "* ]]  && echo "     git config --local user.name  \"Your Name\""
-    [[ " ${missing[*]} " == *" user.email "* ]] && echo "     git config --local user.email \"you@example.com\""
+    [[ " ${missing[*]} " == *" user.name "* ]]  && echo "     git config --local user.name  \"Your Name\""  || true
+    [[ " ${missing[*]} " == *" user.email "* ]] && echo "     git config --local user.email \"you@example.com\"" || true
     echo "   Until it's set, commits inside the container fail with 'Author identity unknown'."
   fi
 }
@@ -363,7 +363,7 @@ cmd_down() {
   fi
 
   local label="stack"
-  [[ -n "$project" ]] && label="stack '$project'"
+  [[ -n "$project" ]] && label="stack '$project'" || true
   echo "Tore down $label: containers + per-project volumes removed; shared caches preserved."
 
   if [[ -n "$purge_caches" ]]; then
