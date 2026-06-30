@@ -1,0 +1,149 @@
+#!/usr/bin/env bash
+# One-time, per-clone setup for the {{PROJECT_NAME}} devcontainer.
+#
+#   bin/devcontainer setup
+#       Prepare this clone/worktree to run the dev container. Bundles the manual
+#       one-time steps into one idempotent command:
+#         - check prerequisites (Docker running; note if the devcontainer CLI is
+#           missing — `bin/worktree up` needs it)
+#         - create the shared, external toolchain cache volumes (otherwise
+#           `compose up` fails with "volume … could not be found")
+#         - seed commit identity: copy user.name / user.email from your GLOBAL
+#           git config into this repo's LOCAL .git/config (bind-mounted, shared
+#           host+container). If a value isn't set globally, print how to set it
+#           manually instead of guessing.
+#       Safe to re-run. After it, bring the stack up with `bin/worktree up`.
+set -euo pipefail
+
+ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
+SHARED_VOLUMES=({{SHARED_VOLUMES}})
+
+usage() {
+  sed -n '2,/^set -euo/p' "$0" | sed '$d; s/^# \{0,1\}//'
+}
+
+# Docker must be installed AND running, or volume creation / `up` will fail.
+check_docker() {
+  if ! command -v docker >/dev/null 2>&1; then
+    echo "Docker not found on PATH. Install Docker Desktop / OrbStack (or compatible) and re-run." >&2
+    return 1
+  fi
+  if ! docker info >/dev/null 2>&1; then
+    echo "Docker is installed but not running (or not reachable). Start it and re-run." >&2
+    return 1
+  fi
+}
+
+# The editor-neutral CLI is needed by `bin/worktree up` (it runs
+# postCreateCommand and stamps locator labels). Not fatal for setup itself.
+check_devcontainer_cli() {
+  if ! command -v devcontainer >/dev/null 2>&1; then
+    echo "Note: the 'devcontainer' CLI isn't installed — 'bin/worktree up' needs it."
+    echo "      Install with: npm install -g @devcontainers/cli  (or: brew install devcontainer)"
+  fi
+}
+
+# Create each shared external cache volume if absent. These are declared
+# `external: true` in docker-compose.yml and shared across all worktrees, so they
+# must exist before the first `up`.
+ensure_shared_volumes() {
+  if [[ ${#SHARED_VOLUMES[@]} -eq 0 ]]; then
+    echo "No shared cache volumes configured."
+    return
+  fi
+  for v in "${SHARED_VOLUMES[@]}"; do
+    if docker volume inspect "$v" >/dev/null 2>&1; then
+      echo "Shared volume already exists: $v"
+    else
+      docker volume create "$v" >/dev/null
+      echo "Created shared volume: $v"
+    fi
+  done
+}
+
+# Commit identity lives in the repo's bind-mounted .git/config (shared by host
+# and container) — NOT in any host ~/.gitconfig (which is deliberately never
+# mounted). Copy it from your global git config so the container can attribute
+# commits; if global is unset, tell the user how to set it rather than guessing.
+setup_git_identity() {
+  if ! git -C "$ROOT" rev-parse --git-dir >/dev/null 2>&1; then
+    echo "Not a git repo: $ROOT — skipping commit identity setup." >&2
+    return
+  fi
+
+  local local_name local_email
+  local_name=$(git -C "$ROOT" config --local --get user.name 2>/dev/null || true)
+  local_email=$(git -C "$ROOT" config --local --get user.email 2>/dev/null || true)
+
+  if [[ -n "$local_name" && -n "$local_email" ]]; then
+    echo "Commit identity already set for this repo: $local_name <$local_email>"
+    return
+  fi
+
+  local global_name global_email
+  global_name=$(git config --global --get user.name 2>/dev/null || true)
+  global_email=$(git config --global --get user.email 2>/dev/null || true)
+
+  local missing=()
+  if [[ -z "$local_name" ]]; then
+    if [[ -n "$global_name" ]]; then
+      git -C "$ROOT" config --local user.name "$global_name"
+      echo "Set local user.name from global: $global_name"
+    else
+      missing+=("user.name")
+    fi
+  fi
+  if [[ -z "$local_email" ]]; then
+    if [[ -n "$global_email" ]]; then
+      git -C "$ROOT" config --local user.email "$global_email"
+      echo "Set local user.email from global: $global_email"
+    else
+      missing+=("user.email")
+    fi
+  fi
+
+  if [[ ${#missing[@]} -gt 0 ]]; then
+    echo
+    echo "!! Could not set commit identity automatically — your global git config has no ${missing[*]}."
+    echo "   Set it manually for this repo (writes to the bind-mounted .git/config, shared host+container):"
+    [[ " ${missing[*]} " == *" user.name "* ]]  && echo "     git config --local user.name  \"Your Name\""
+    [[ " ${missing[*]} " == *" user.email "* ]] && echo "     git config --local user.email \"you@example.com\""
+    echo "   Until it's set, commits inside the container fail with 'Author identity unknown'."
+  fi
+}
+
+cmd_setup() {
+  while [[ $# -gt 0 ]]; do
+    case "$1" in
+      -h|--help) usage; exit 0 ;;
+      *) echo "Unknown arg: $1" >&2; exit 1 ;;
+    esac
+  done
+
+  check_docker
+  check_devcontainer_cli
+
+  echo
+  echo "Shared toolchain cache volumes:"
+  ensure_shared_volumes
+
+  echo
+  echo "Commit identity:"
+  setup_git_identity
+
+  cat <<'EOF'
+
+Setup complete. Next:
+  bin/worktree up      build + start this worktree's stack and run post-create
+  devcontainer exec zsh   open a shell in the container
+EOF
+}
+
+cmd="${1:-}"
+shift || true
+
+case "$cmd" in
+  setup)        cmd_setup "$@" ;;
+  -h|--help|"") usage ;;
+  *) echo "Unknown command: $cmd" >&2; usage; exit 1 ;;
+esac

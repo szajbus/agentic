@@ -35,13 +35,20 @@ Named volumes survive rebuilds:
 ## Prerequisites
 
 - Docker (Docker Desktop, OrbStack, or compatible).
-- The shared external cache volumes (one-time, or `compose up` will fail with
-  "volume … could not be found"):
-  ```sh
-  # Create one volume per shared cache the project uses:
-  # docker volume create {{PROJECT_SLUG}}-<name>-cache
-  ```
 - Optional, for the editor-neutral CLI: `npm i -g @devcontainers/cli`.
+
+Then run the one-time, per-clone setup:
+
+```sh
+bin/devcontainer setup
+```
+
+It creates the shared external cache volumes (one per toolchain cache — otherwise
+`compose up` fails with "volume … could not be found"), seeds your commit
+identity by copying `user.name`/`user.email` from your global git config into this
+repo's local `.git/config` (or tells you how to set it if your global config has
+none — see [Commit identity](#commit-identity)), and checks Docker is running.
+It's idempotent, so re-run it any time.
 
 ## Bringing it up
 
@@ -100,7 +107,9 @@ hardcode `0.0.0.0` in app config.
 
 ### Commit identity
 
-Set once per clone (see [Git: identity in, secrets out](#git-identity-in-secrets-out)):
+`bin/devcontainer setup` seeds this for you by copying `user.name`/`user.email`
+from your global git config. To set or change it by hand (see [Git: identity in,
+secrets out](#git-identity-in-secrets-out)):
 
 ```sh
 git config --local user.name  "Your Name"

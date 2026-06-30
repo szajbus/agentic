@@ -3,7 +3,8 @@ name: devcontainer
 description: >-
   Generate a reproducible, sandboxed Dev Container (devcontainer.json + Docker
   Compose + Dockerfile + post-create script + a bin/worktree lifecycle helper +
-  a README) for a project, following a security-first "git identity in, secrets
+  a bin/devcontainer one-time setup helper + a README) for a project, following
+  a security-first "git identity in, secrets
   out" model where an unattended coding agent runs in bypassPermissions but has
   no SSH keys, no push credentials, and no host gitconfig — so it can only read
   history and make local unsigned commits, while signing and push stay on the
@@ -126,6 +127,11 @@ Files to generate:
 - `.devcontainer/.zshrc`
 - `.devcontainer/README.md`
 - `bin/worktree` (chmod +x)
+- `bin/devcontainer` (chmod +x) — one-time, per-clone `setup` command that
+  creates the shared cache volumes, seeds commit identity from the host's global
+  git config (or prints how to set it), and checks prerequisites. Lives
+  alongside `bin/worktree`; shares the `{{SHARED_VOLUMES}}` and `{{PROJECT_NAME}}`
+  placeholders.
 - `bin/chrome-host`, `bin/chrome-cdp` (chmod +x) — **only if** the host-browser
   feature is enabled; otherwise skip them and delete the `STACK:browser` compose
   block. See `references/host-browser.md`.
@@ -188,11 +194,14 @@ workmux is just the worked example.
 
 ### 6. Tell the user the one-time setup + lifecycle
 
-- Create the external cache volumes (otherwise `compose up` fails with
-  "volume … could not be found"):
-  `docker volume create {{slug}}-<name>-cache` for each cache.
-- Set commit identity once per clone:
-  `git config --local user.name "…"` and `git config --local user.email "…"`.
+- Run the one-time, per-clone setup: `bin/devcontainer setup`. It creates the
+  external cache volumes (otherwise `compose up` fails with "volume … could not
+  be found"), seeds commit identity by copying `user.name`/`user.email` from the
+  host's **global** git config into the repo-local `.git/config` (and tells the
+  user to set it manually if global is unset), and checks Docker is running.
+  Idempotent — safe to re-run. The underlying manual steps, if they prefer:
+  `docker volume create {{slug}}-<name>-cache` per cache, then `git config
+  --local user.name "…"` / `git config --local user.email "…"`.
 - Bring it up: `bin/worktree up` (needs the `devcontainer` CLI:
   `npm i -g @devcontainers/cli`).
 
