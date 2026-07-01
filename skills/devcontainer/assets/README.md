@@ -44,11 +44,11 @@ bin/devcontainer setup
 ```
 
 It creates the shared external cache volumes (one per toolchain cache — otherwise
-`compose up` fails with "volume … could not be found"), seeds your commit
-identity by copying `user.name`/`user.email` from your global git config into this
-repo's local `.git/config` (or tells you how to set it if your global config has
-none — see [Commit identity](#commit-identity)), and checks Docker is running.
-It's idempotent, so re-run it any time.
+`compose up` fails with "volume … could not be found"), reports the commit
+identity the container will use (resolved on the host from your global git config,
+or your `GIT_AUTHOR_*` / `GIT_COMMITTER_*` env vars — applied inside the container
+on `bin/devcontainer up`; see [Commit identity](#commit-identity)), and checks
+Docker is running. It's idempotent, so re-run it any time.
 
 ## Bringing it up
 
@@ -107,17 +107,24 @@ hardcode `0.0.0.0` in app config.
 
 ### Commit identity
 
-`bin/devcontainer setup` seeds this for you by copying `user.name`/`user.email`
-from your global git config. To set or change it by hand (see [Git: identity in,
-secrets out](#git-identity-in-secrets-out)):
+The container gets a commit identity of its own. `bin/devcontainer` resolves one
+on the host (from your global git config, else `GIT_AUTHOR_*` / `GIT_COMMITTER_*`
+env vars), passes it in via `.devcontainer/.env`, and `post_install.sh` writes it
+into the container's global config (`~/.gitconfig.local`, pointed at by
+`GIT_CONFIG_GLOBAL`).
+
+Precedence per field: an identity set in the repo's `.git/config` (git reads it
+straight from the bind mount) → global git config → `GIT_AUTHOR_*` →
+`GIT_COMMITTER_*`. Set a global identity on the host with:
 
 ```sh
-git config --local user.name  "Your Name"
-git config --local user.email "you@example.com"
+git config --global user.name  "Your Name"
+git config --global user.email "you@example.com"
 ```
 
-This writes to the repo's `.git/config`, which is bind-mounted — so the **same**
-identity applies on the host and in the container, with no extra wiring.
+then `bin/devcontainer up`. If you'd rather pin an identity to **just this repo**
+(shared host↔container via the bind-mounted `.git/config`), use `git config
+--local` instead — the container honors it and skips the injected value.
 
 ## Git: identity in, secrets out
 
@@ -132,12 +139,11 @@ To bound what a runaway or compromised agent could do, the container is given
 
 What *is* provided:
 
-- **Commit identity** — set per-repo with `git config --local` (see
-  [Commit identity](#commit-identity)). It lives in the bind-mounted
-  `.git/config`, so host and container share one value. If unset, commits fail
-  loudly until you set it.
+- **Commit identity** — resolved on the host and written into the container's
+  `~/.gitconfig.local` (see [Commit identity](#commit-identity)). If none can be
+  resolved, commits fail loudly until you set one.
 - A **self-contained git config** (`~/.gitconfig.local`: delta pager, diff/merge
-  settings). No host config leaks in.
+  settings, and the injected commit identity). No host config leaks in.
 
 **Fetch / pull / push** and **commit signing** happen on the **host**, where
 your keys live and where *you* — not the agent — trigger the action.
@@ -148,8 +154,8 @@ Because the repo is bind-mounted, the container and host share the same `.git`,
 so a commit made in the container is immediately visible on the host — no
 copying.
 
-1. In the **container**, work and commit normally (unsigned, attributed via
-   your `git config --local` identity):
+1. In the **container**, work and commit normally (unsigned, attributed via the
+   injected commit identity):
 
    ```sh
    git add -A
@@ -207,8 +213,9 @@ main repo's `.git`) and the worktree's own path and mounts both into the contain
 ## Troubleshooting
 
 - **`Author identity unknown` / `unable to auto-detect email address` on
-  commit** — commit identity isn't set for this repo. Run the two
-  `git config --local` commands from [Commit identity](#commit-identity).
+  commit** — no identity was resolvable on the host. Set a global one
+  (`git config --global user.name/user.email`) or export `GIT_AUTHOR_*`, then
+  re-run `bin/devcontainer up`. See [Commit identity](#commit-identity).
 - **`volume "…" could not be found`** — create the external cache volumes (see
   [Prerequisites](#prerequisites)).
 - **Port already in use** — set `PORT` to a free port, or let `bin/devcontainer up`

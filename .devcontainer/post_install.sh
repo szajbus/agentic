@@ -98,8 +98,10 @@ TMUX
 
 # ---------------------------------------------------------------------------
 # Git: self-contained container-local config (no host gitconfig is mounted)
-# with container-only settings (excludesfile, delta, merge style). Commit
-# identity is set per-repo via `git config --local` (see .devcontainer/README).
+# with container-only settings (excludesfile, delta, merge style) and the
+# commit identity injected from the host via GIT_IDENT_* (see docker-compose.yml
+# and bin/devcontainer). Identity is written HERE, into the container's own
+# global config — never into the repo's bind-mounted .git/config.
 # GIT_CONFIG_GLOBAL points git at this file.
 # ---------------------------------------------------------------------------
 setup_git() {
@@ -130,8 +132,8 @@ GI
 
   cat > "$local_gitconfig" <<GC
 # Container-local git config. Self-contained — no host .gitconfig is mounted.
-# GIT_CONFIG_GLOBAL points git here. Commit identity is set per-repo with
-# 'git config --local'.
+# GIT_CONFIG_GLOBAL points git here. The commit identity is injected from the
+# host (GIT_IDENT_*) and appended below.
 
 [core]
     excludesfile = ${gitignore}
@@ -159,9 +161,23 @@ GI
     directory = *
 GC
   log "Container git config created: $local_gitconfig"
-  # Commit identity is NOT set here — it's configured per-repo with
-  # 'git config --local' (stored in the bind-mounted .git/config, shared with
-  # the host). If unset, commits fail loudly until you set it. See README.
+
+  # Commit identity: injected from the host via GIT_IDENT_* and written into the
+  # container's OWN global config (this file) — never into the repo's
+  # bind-mounted .git/config. Skipped when empty: either nothing was resolvable
+  # on the host, or the repo already carries a local identity that git reads
+  # directly from the bind mount (repo-local overrides this file anyway).
+  if [[ -n "${GIT_IDENT_NAME:-}" ]]; then
+    git config --file "$local_gitconfig" user.name "$GIT_IDENT_NAME"
+  fi
+  if [[ -n "${GIT_IDENT_EMAIL:-}" ]]; then
+    git config --file "$local_gitconfig" user.email "$GIT_IDENT_EMAIL"
+  fi
+  if [[ -n "${GIT_IDENT_NAME:-}${GIT_IDENT_EMAIL:-}" ]]; then
+    log "Commit identity set in $local_gitconfig: ${GIT_IDENT_NAME:-<unset>} <${GIT_IDENT_EMAIL:-<unset>}>"
+  else
+    log "No commit identity injected (GIT_IDENT_* empty) — relying on repo .git/config if it has one"
+  fi
 }
 
 # ---------------------------------------------------------------------------

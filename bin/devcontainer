@@ -9,14 +9,17 @@
 #           missing — `up` needs it)
 #         - create the shared, external toolchain cache volumes (otherwise
 #           `compose up` fails with "volume … could not be found")
-#         - seed commit identity: copy user.name / user.email from your GLOBAL
-#           git config into this repo's LOCAL .git/config (bind-mounted, shared
-#           host+container). If a value isn't set globally, print how to set it.
+#         - check the commit identity it will give the container: resolved on
+#           the host from your GLOBAL git config (falling back to GIT_AUTHOR_* /
+#           GIT_COMMITTER_* env vars) and, on `up`, written into the container's
+#           OWN ~/.gitconfig.local — the repo's .git/config is left untouched.
+#           If nothing is found, print how to set it.
 #       Safe to re-run.
 #
 #   bin/devcontainer up [--name NAME] [--port PORT] [--recreate]
 #       Ensure shared volumes exist, write .devcontainer/.env (project name,
-#       port, and the git-mount paths that make in-container commits work), and
+#       port, the git-mount paths that make in-container commits work, and the
+#       resolved commit identity for the container), and
 #       bring the dev container up via the `devcontainer` CLI. Using the CLI (not
 #       raw `docker compose up`) is what runs postCreateCommand (post_install.sh:
 #       deps + DB) and stamps the locator labels that `devcontainer exec` needs.
@@ -169,58 +172,73 @@ PORT=$port
 # .git, which lives outside /workspace). See docker-compose.yml / README.
 GIT_COMMON_DIR=$GIT_COMMON_DIR
 WORKTREE_HOST_DIR=$WORKTREE_HOST_DIR
+# Commit identity resolved on the host (see resolve_git_identity). Passed into
+# the container, where post_install.sh writes it to ~/.gitconfig.local — the
+# repo's own .git/config is never touched. Empty when unresolved, or when the
+# repo already carries a local identity (git reads that from the bind mount).
+GIT_IDENT_NAME=$IDENT_NAME
+GIT_IDENT_EMAIL=$IDENT_EMAIL
 EOF
   echo "Wrote $ENV_FILE (COMPOSE_PROJECT_NAME=$name, PORT=$port)"
 }
 
-# Commit identity lives in the repo's bind-mounted .git/config (shared by host
-# and container) — NOT in any host ~/.gitconfig (which is deliberately never
-# mounted). Copy it from your global git config so the container can attribute
-# commits; if global is unset, tell the user how to set it rather than guessing.
-setup_git_identity() {
+# Resolve the commit identity for the CONTAINER without touching the repo's
+# .git/config. We read it on the host — where the global git config and any
+# GIT_AUTHOR_*/GIT_COMMITTER_* env vars are visible — and pass it via .env into
+# the container, where post_install.sh writes it to ~/.gitconfig.local (the
+# container's GIT_CONFIG_GLOBAL). That keeps the bind-mounted .git/config
+# pristine, which matters especially for worktrees: `git config --local` there
+# writes to the SHARED common config, hitting the main checkout and every
+# sibling worktree. If the repo already carries a local identity, git reads it
+# straight from the bind mount, so we leave that field empty.
+#
+# Precedence per field: repo-local (leave to git) → global config →
+# $GIT_AUTHOR_* → $GIT_COMMITTER_*. Global before env so a transient GIT_AUTHOR_*
+# override in the current shell doesn't get baked in when a global exists.
+#
+# Sets: IDENT_NAME / IDENT_EMAIL — values to inject (empty = covered locally or
+#         unresolved); NAME_NOTE / EMAIL_NOTE — human-readable source; and
+#         IDENT_MISSING — space-separated fields with no identity anywhere.
+resolve_git_identity() {
+  IDENT_NAME=""; IDENT_EMAIL=""; NAME_NOTE=""; EMAIL_NOTE=""; IDENT_MISSING=""
+
   if ! git -C "$ROOT" rev-parse --git-dir >/dev/null 2>&1; then
-    echo "Not a git repo: $ROOT — skipping commit identity setup." >&2
+    NAME_NOTE="(not a git repo — skipped)"; EMAIL_NOTE="$NAME_NOTE"
     return
   fi
 
-  local local_name local_email
+  local local_name local_email global_name global_email
   local_name=$(git -C "$ROOT" config --local --get user.name 2>/dev/null || true)
   local_email=$(git -C "$ROOT" config --local --get user.email 2>/dev/null || true)
-
-  if [[ -n "$local_name" && -n "$local_email" ]]; then
-    echo "Commit identity already set for this repo: $local_name <$local_email>"
-    return
-  fi
-
-  local global_name global_email
   global_name=$(git config --global --get user.name 2>/dev/null || true)
   global_email=$(git config --global --get user.email 2>/dev/null || true)
 
-  local missing=()
-  if [[ -z "$local_name" ]]; then
-    if [[ -n "$global_name" ]]; then
-      git -C "$ROOT" config --local user.name "$global_name"
-      echo "Set local user.name from global: $global_name"
-    else
-      missing+=("user.name")
-    fi
-  fi
-  if [[ -z "$local_email" ]]; then
-    if [[ -n "$global_email" ]]; then
-      git -C "$ROOT" config --local user.email "$global_email"
-      echo "Set local user.email from global: $global_email"
-    else
-      missing+=("user.email")
-    fi
-  fi
+  if   [[ -n "$local_name"             ]]; then NAME_NOTE="already in repo .git/config: $local_name"
+  elif [[ -n "$global_name"            ]]; then IDENT_NAME="$global_name";        NAME_NOTE="global git config: $global_name"
+  elif [[ -n "${GIT_AUTHOR_NAME:-}"    ]]; then IDENT_NAME="$GIT_AUTHOR_NAME";    NAME_NOTE="\$GIT_AUTHOR_NAME: $GIT_AUTHOR_NAME"
+  elif [[ -n "${GIT_COMMITTER_NAME:-}" ]]; then IDENT_NAME="$GIT_COMMITTER_NAME"; NAME_NOTE="\$GIT_COMMITTER_NAME: $GIT_COMMITTER_NAME"
+  else IDENT_MISSING+="user.name "; fi
 
-  if [[ ${#missing[@]} -gt 0 ]]; then
+  if   [[ -n "$local_email"             ]]; then EMAIL_NOTE="already in repo .git/config: $local_email"
+  elif [[ -n "$global_email"            ]]; then IDENT_EMAIL="$global_email";        EMAIL_NOTE="global git config: $global_email"
+  elif [[ -n "${GIT_AUTHOR_EMAIL:-}"    ]]; then IDENT_EMAIL="$GIT_AUTHOR_EMAIL";    EMAIL_NOTE="\$GIT_AUTHOR_EMAIL: $GIT_AUTHOR_EMAIL"
+  elif [[ -n "${GIT_COMMITTER_EMAIL:-}" ]]; then IDENT_EMAIL="$GIT_COMMITTER_EMAIL"; EMAIL_NOTE="\$GIT_COMMITTER_EMAIL: $GIT_COMMITTER_EMAIL"
+  else IDENT_MISSING+="user.email "; fi
+}
+
+# Print what resolve_git_identity found and, if anything's missing, how to fix it.
+report_git_identity() {
+  [[ -n "$NAME_NOTE"  ]] && echo "  user.name  <- $NAME_NOTE"  || true
+  [[ -n "$EMAIL_NOTE" ]] && echo "  user.email <- $EMAIL_NOTE" || true
+  if [[ -n "$IDENT_MISSING" ]]; then
     echo
-    echo "!! Could not set commit identity automatically — your global git config has no ${missing[*]}."
-    echo "   Set it manually for this repo (writes to the bind-mounted .git/config, shared host+container):"
-    [[ " ${missing[*]} " == *" user.name "* ]]  && echo "     git config --local user.name  \"Your Name\""  || true
-    [[ " ${missing[*]} " == *" user.email "* ]] && echo "     git config --local user.email \"you@example.com\"" || true
-    echo "   Until it's set, commits inside the container fail with 'Author identity unknown'."
+    echo "!! No ${IDENT_MISSING% } found in your global git config, GIT_AUTHOR_*, or GIT_COMMITTER_* env vars."
+    echo "   The container needs a commit identity. Set a global one on the host:"
+    echo "     git config --global user.name  \"Your Name\""
+    echo "     git config --global user.email \"you@example.com\""
+    echo "   (or export GIT_AUTHOR_NAME/GIT_AUTHOR_EMAIL), then re-run 'bin/devcontainer up'."
+    echo "   Alternatively set it for just this repo with 'git config --local ...'."
+    echo "   Until then, commits inside the container fail with 'Author identity unknown'."
   fi
 }
 
@@ -240,8 +258,9 @@ cmd_setup() {
   ensure_shared_volumes verbose
 
   echo
-  echo "Commit identity:"
-  setup_git_identity
+  echo "Commit identity (resolved on the host; applied inside the container on 'up', repo .git/config untouched):"
+  resolve_git_identity
+  report_git_identity
 
   cat <<'EOF'
 
@@ -287,9 +306,12 @@ cmd_up() {
 
   # Always (re)write .env: it also carries the absolute git-mount paths, which
   # must be present for compose even when name/port are unchanged, and which
-  # move if the worktree is relocated.
+  # move if the worktree is relocated, plus the resolved commit identity.
   compute_git_mounts
+  resolve_git_identity
   write_env "$name" "$port"
+  echo "Commit identity (written to the container's ~/.gitconfig.local, not the repo's .git/config):"
+  report_git_identity
 
   if [[ -n "$cli_recreate" ]]; then
     devcontainer up --workspace-folder "$ROOT" --remove-existing-container

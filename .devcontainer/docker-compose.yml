@@ -12,6 +12,14 @@ services:
     environment:
       CLAUDE_CONFIG_DIR: /home/dev/.claude
       GIT_CONFIG_GLOBAL: /home/dev/.gitconfig.local
+      # Commit identity resolved on the HOST by bin/devcontainer (from your global
+      # git config, else GIT_AUTHOR_*/GIT_COMMITTER_*) and passed in via .env.
+      # post_install writes these into ~/.gitconfig.local (this container's
+      # GIT_CONFIG_GLOBAL), so the repo's own bind-mounted .git/config is never
+      # touched. Empty when unresolved or already set repo-locally — post_install
+      # skips them then.
+      GIT_IDENT_NAME: "${GIT_IDENT_NAME:-}"
+      GIT_IDENT_EMAIL: "${GIT_IDENT_EMAIL:-}"
       POWERLEVEL9K_DISABLE_GITSTATUS: "true"
       PORT: "${PORT:-4400}"
       # No app server ships with this repo, but if a skill experiment spins one
@@ -45,9 +53,9 @@ services:
         consistency: delegated
       # Only this repo's own git store is mounted (above). No host ~/.gitconfig,
       # SSH agent/keys, or push credentials are mounted: the container stays
-      # self-contained. Base git config comes from ~/.gitconfig.local (written by
-      # post_install.sh); commit identity is set per-repo via `git config
-      # --local` in the bind-mounted repo (shared with the host); push and commit
+      # self-contained. Base git config AND the commit identity come from
+      # ~/.gitconfig.local (written by post_install.sh from the host-resolved
+      # GIT_IDENT_*); the repo's own .git/config is untouched; push and commit
       # signing are done from the host.
       # Persistent caches and config
       - commandhistory:/commandhistory

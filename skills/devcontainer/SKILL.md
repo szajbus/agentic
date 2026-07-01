@@ -36,10 +36,11 @@ These invariants are the whole point. They are the same for every project:
 1. **Git: identity in, secrets out.** No SSH agent, no SSH keys, no host
    `~/.gitconfig`, no push/pull credentials in the container. Git inside the
    container is pointed at a self-contained `~/.gitconfig.local` via
-   `GIT_CONFIG_GLOBAL`. Commit *identity* is set per-repo with `git config
-   --local` (lands in the bind-mounted `.git/config`, shared with the host).
-   The container can only **read history and make local, unsigned commits**;
-   **fetch/pull/push and commit signing happen on the host.**
+   `GIT_CONFIG_GLOBAL`. Commit *identity* is resolved on the host (global git
+   config, else `GIT_AUTHOR_*`/`GIT_COMMITTER_*`) and written into that same
+   `~/.gitconfig.local` — the repo's bind-mounted `.git/config` is never
+   modified. The container can only **read history and make local, unsigned
+   commits**; **fetch/pull/push and commit signing happen on the host.**
 2. **Agent runs in `bypassPermissions`, bounded by #1.** The two reinforce each
    other: the agent runs with no approval prompts *because* the git boundary
    caps the blast radius of a runaway or compromised agent.
@@ -127,9 +128,9 @@ Files to generate:
 - `.devcontainer/.zshrc`
 - `.devcontainer/README.md`
 - `bin/devcontainer` (chmod +x) — the single lifecycle helper: `setup` (one-time
-  per-clone: create cache volumes, seed commit identity from the host's global
-  git config or print how to set it, check prerequisites) plus `up` / `down` /
-  `status`. It is worktree-aware automatically (worktree vs main clone is
+  per-clone: create cache volumes, report the commit identity resolved from the
+  host's global git config / env or print how to set it, check prerequisites)
+  plus `up` / `down` / `status`. It is worktree-aware automatically (worktree vs main clone is
   detected via git), so there is no separate worktree script.
 - `bin/chrome-host`, `bin/chrome-cdp` (chmod +x) — **only if** the host-browser
   feature is enabled; otherwise skip them and delete the `STACK:browser` compose
@@ -196,12 +197,13 @@ workmux is just the worked example.
 
 - Run the one-time, per-clone setup: `bin/devcontainer setup`. It creates the
   external cache volumes (otherwise `compose up` fails with "volume … could not
-  be found"), seeds commit identity by copying `user.name`/`user.email` from the
-  host's **global** git config into the repo-local `.git/config` (and tells the
-  user to set it manually if global is unset), and checks Docker is running.
-  Idempotent — safe to re-run. The underlying manual steps, if they prefer:
-  `docker volume create {{slug}}-<name>-cache` per cache, then `git config
-  --local user.name "…"` / `git config --local user.email "…"`.
+  be found"), reports the commit identity the container will use — resolved on
+  the host from the **global** git config, else `GIT_AUTHOR_*`/`GIT_COMMITTER_*`
+  (and tells the user how to set one if nothing is found) — and checks Docker is
+  running. Idempotent — safe to re-run. The identity is applied inside the
+  container on `up` (written to `~/.gitconfig.local`), never to the repo's
+  `.git/config`. Underlying manual step for the caches, if they prefer:
+  `docker volume create {{slug}}-<name>-cache` per cache.
 - Bring it up: `bin/devcontainer up` (needs the `devcontainer` CLI:
   `npm i -g @devcontainers/cli`).
 

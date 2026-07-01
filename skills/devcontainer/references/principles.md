@@ -23,12 +23,18 @@ What *is* provided inside the container:
 
 - **A self-contained git config** at `~/.gitconfig.local`, pointed to by
   `GIT_CONFIG_GLOBAL`. It carries container-only conveniences (delta pager,
-  diff/merge style, a global gitignore) and deliberately **does not** inherit
-  anything from the host. Nothing leaks in.
-- **Commit identity**, set per-repo with `git config --local user.name/email`.
-  This writes to the repo's `.git/config`, which is bind-mounted — so the same
-  identity applies on host and in container with no extra wiring. If unset,
-  commits fail loudly (by design) until the user sets it.
+  diff/merge style, a global gitignore) plus the commit identity (next bullet).
+  The host's `~/.gitconfig` is never mounted; nothing but the deliberately
+  resolved identity comes from the host.
+- **Commit identity**, resolved on the host (global git config, else
+  `GIT_AUTHOR_*`/`GIT_COMMITTER_*` env vars) and written into that same
+  `~/.gitconfig.local` inside the container — the repo's bind-mounted
+  `.git/config` is never modified. Writing the container's own config rather than
+  `.git/config` matters for worktrees: `git config --local` there lands in the
+  *shared* common config and would leak the identity across every sibling
+  worktree. Resolution runs on the host, where the global config and those env
+  vars are visible. If nothing is resolvable, commits fail loudly (by design)
+  until the user sets an identity.
 
 The intended workflow: **commit in the container, sign + push on the host.**
 Because the repo is bind-mounted, a commit made in the container is immediately
